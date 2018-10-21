@@ -28,6 +28,7 @@ enum class EPawnTrend : uint8
 
 DECLARE_DELEGATE(FOnMoveCompleteDelegate);
 DECLARE_DELEGATE(FOnCheckToolCompleteDelegate);
+DECLARE_DELEGATE(FOnCameraCircleCompleteDelegate);
 
 UCLASS()
 class WAYHOME_API APlayerPawn : public APawn
@@ -43,8 +44,12 @@ protected:
 	virtual void BeginPlay() override;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 		UStaticMeshComponent* MeshComp;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+		USceneComponent* RotatePoint;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 		UCameraComponent* CameraComp;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+		UWidgetInteractionComponent* WidgetInteractionComp;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "LineTrace")
 		float TraceLength_Forward;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "LineTrace")
@@ -55,8 +60,7 @@ protected:
 		float TraceLength_Leftward;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "LineTrace")
 		float TraceLength_Base;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-		UWidgetInteractionComponent* WidgetInteractionComp;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 		UWidgetComponent* ForwardButton;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
@@ -67,6 +71,8 @@ protected:
 		UWidgetComponent* LeftwardButton;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Move")
 		float MoveSpeed;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Move")
+		float CameraChangeSpeed;
 	UPROPERTY(BlueprintReadOnly, Category = "Tools")
 		AActor* FrontTool;
 	UPROPERTY(BlueprintReadOnly, Category = "Tools")
@@ -100,9 +106,14 @@ protected:
 	EPawnTrend BackwardTrend;
 	EPawnState LeftwardState;
 	EPawnTrend LeftwardTrend;
+	bool bIsCameraCircling;
+	FRotator StartCirclePointRotation;
+	FRotator EndCirclePointRotation;
+	FRotator CircleOffset;
 
 	FOnMoveCompleteDelegate OnMoveCompleteDelegate;
 	FOnCheckToolCompleteDelegate OnCheckToolCompleteDelegate;
+	FOnCameraCircleCompleteDelegate OnCameraCircleCompleteDelegate;
 	UPROPERTY(EditDefaultsOnly, Category = "PawnInfo")
 		EPawnState PawnState;
 	UPROPERTY(EditDefaultsOnly, Category = "PawnInfo")
@@ -112,8 +123,9 @@ protected:
 	void CheckBase();
 	void ResetButtonTransform();
 	void Moving(float DeltaTime);
+	void CameraCircling(float DeltaTime);
 	void OnMovingComplete();
-
+	void OnCameraCircleComplete();
 
 
 	//Î»ÒÆº¯Êý
@@ -124,7 +136,8 @@ public:
 
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
-	UFUNCTION(BlueprintCallable, Category = "Move")
+	UFUNCTION(BlueprintCallable, Category = "PlayerPawn|Move")
 		void StartMove(AActor* Tool);
-
+	UFUNCTION(BlueprintCallable, Category = "PlayerPawn|Camera")
+		void StartCircleCamera(bool bIsNext);
 };

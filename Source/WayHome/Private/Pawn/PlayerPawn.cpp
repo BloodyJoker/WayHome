@@ -2,6 +2,7 @@
 
 #include "PlayerPawn.h"
 #include "WayHome.h"
+#include "WayHomePlayerController.h"
 #include "Camera/CameraComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
@@ -21,39 +22,42 @@ APlayerPawn::APlayerPawn()
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RootComp"));
+	RotatePoint= CreateDefaultSubobject<USceneComponent>(TEXT("RotatePoint"));
 	CameraComp = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+	WidgetInteractionComp = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("WidgetInteractionComp"));
 	MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	ForwardButton = CreateDefaultSubobject<UWidgetComponent>(TEXT("ForwardButton"));
 	RightwardButton = CreateDefaultSubobject<UWidgetComponent>(TEXT("RightwardButton"));
 	BackwardButton = CreateDefaultSubobject<UWidgetComponent>(TEXT("BackwardButton"));
 	LeftwardButton = CreateDefaultSubobject<UWidgetComponent>(TEXT("LeftwardButton"));
-	WidgetInteractionComp = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("WidgetInteractionComp"));
 
-	CameraComp->SetupAttachment(RootComponent);
+	RotatePoint->SetupAttachment(RootComponent);
+	CameraComp->SetupAttachment(RotatePoint);
+	WidgetInteractionComp->SetupAttachment(CameraComp);
 	MeshComp->SetupAttachment(RootComponent);
 	MeshComp->SetEnableGravity(false);
 	ForwardButton->SetupAttachment(RootComponent);
 	RightwardButton->SetupAttachment(RootComponent);
 	BackwardButton->SetupAttachment(RootComponent);
 	LeftwardButton->SetupAttachment(RootComponent);
-	WidgetInteractionComp->SetupAttachment(CameraComp);
-
 
 	TraceLength_Forward = 150.0f;
 	TraceLength_Rightward = 150.0f;
 	TraceLength_Backward = 150.0f;
 	TraceLength_Leftward = 150.0f;
 	TraceLength_Base = 150.0f;
-	ForwardButton->SetDrawSize(FVector2D(80, 40));
-	RightwardButton->SetDrawSize(FVector2D(80, 40));
-	BackwardButton->SetDrawSize(FVector2D(80, 40));
-	LeftwardButton->SetDrawSize(FVector2D(80, 40));
+	ForwardButton->SetDrawSize(FVector2D(200, 100));
+	RightwardButton->SetDrawSize(FVector2D(200, 100));
+	BackwardButton->SetDrawSize(FVector2D(200, 100));
+	LeftwardButton->SetDrawSize(FVector2D(200, 100));
 	MoveSpeed = 20.0f;
 	bMoving = false;
+	bIsCameraCircling = false;
 	PawnState = EPawnState::Vertical;
 	PawnTrend = EPawnTrend::Default;
 	OnMoveCompleteDelegate = FOnMoveCompleteDelegate::CreateUObject(this, &APlayerPawn::OnMovingComplete);
 	OnCheckToolCompleteDelegate = FOnCheckToolCompleteDelegate::CreateUObject(this, &APlayerPawn::ResetButtonTransform);
+	OnCameraCircleCompleteDelegate=FOnCameraCircleCompleteDelegate::CreateUObject(this, &APlayerPawn::OnCameraCircleComplete);
 }
 
 // Called when the game starts or when spawned
@@ -66,7 +70,7 @@ void APlayerPawn::BeginPlay()
 void APlayerPawn::CheckMoveTool()
 {
 	CheckBase();
-	FHitResult Hit, Hit1, Hit2, Hit3, Hit4, Hit5, Hit6;
+	FHitResult Hit1, Hit2, Hit3, Hit4, Hit5, Hit6, Hit7, Hit8;
 	FVector TraceStart = Basement->GetActorLocation();
 	FCollisionQueryParams QueryParams;
 	if (Basement)
@@ -107,7 +111,7 @@ void APlayerPawn::CheckMoveTool()
 				}
 
 				//BackTool
-				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorForwardVector()*(-100), ToolChannel, QueryParams))
+				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorForwardVector()*(-100), ToolChannel, QueryParams = ResetQueryParams(QueryParams)))
 				{
 					QueryParams.AddIgnoredActor(Hit1.GetActor());
 					if (GetWorld()->LineTraceSingleByChannel(Hit2, Hit1.GetActor()->GetActorLocation(), Hit1.GetActor()->GetActorLocation() + GetActorForwardVector()*(-100), ToolChannel, QueryParams))
@@ -132,10 +136,10 @@ void APlayerPawn::CheckMoveTool()
 						BackwardLocationOffset = FVector(0, 0, 200);
 					}
 				}
-
 				//RightTool
-				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart + GetActorForwardVector()*(100), TraceStart + GetActorForwardVector()*(100) + GetActorRightVector()*(100), ToolChannel, QueryParams)
-					&& GetWorld()->LineTraceSingleByChannel(Hit2, TraceStart + GetActorForwardVector()*(-100), TraceStart + GetActorForwardVector()*(-100) + GetActorRightVector()*(100), ToolChannel, QueryParams))
+				QueryParams = ResetQueryParams(QueryParams);
+				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorForwardVector()*(100), ToolChannel, QueryParams)
+					&& GetWorld()->LineTraceSingleByChannel(Hit2, TraceStart, TraceStart + GetActorForwardVector()*(-100), ToolChannel, QueryParams))
 				{
 					QueryParams.AddIgnoredActor(Hit1.GetActor());
 					QueryParams.AddIgnoredActor(Hit2.GetActor());
@@ -147,8 +151,8 @@ void APlayerPawn::CheckMoveTool()
 						QueryParams.AddIgnoredActor(Hit4.GetActor());
 						QueryParams.AddIgnoredActor(Hit5.GetActor());
 						if (!GetWorld()->LineTraceSingleByChannel(Hit6, Hit3.GetActor()->GetActorLocation(), Hit3.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
-							&& !GetWorld()->LineTraceSingleByChannel(Hit6, Hit4.GetActor()->GetActorLocation(), Hit4.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
-							&& !GetWorld()->LineTraceSingleByChannel(Hit6, Hit5.GetActor()->GetActorLocation(), Hit5.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams))
+							&& !GetWorld()->LineTraceSingleByChannel(Hit7, Hit4.GetActor()->GetActorLocation(), Hit4.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
+							&& !GetWorld()->LineTraceSingleByChannel(Hit8, Hit5.GetActor()->GetActorLocation(), Hit5.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams))
 						{
 							RightTool = Hit3.GetActor();
 							RightwardState = EPawnState::Horizontal;
@@ -158,8 +162,9 @@ void APlayerPawn::CheckMoveTool()
 					}
 				}
 				//LeftTool
-				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart + GetActorForwardVector()*(100), TraceStart + GetActorForwardVector()*(100) + GetActorRightVector()*(-100), ToolChannel, QueryParams)
-					&& GetWorld()->LineTraceSingleByChannel(Hit2, TraceStart + GetActorForwardVector()*(-100), TraceStart + GetActorForwardVector()*(-100) + GetActorRightVector()*(-100), ToolChannel, QueryParams))
+				QueryParams = ResetQueryParams(QueryParams);
+				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorForwardVector()*(100), ToolChannel, QueryParams)
+					&& GetWorld()->LineTraceSingleByChannel(Hit2, TraceStart, TraceStart + GetActorForwardVector()*(-100), ToolChannel, QueryParams))
 				{
 					QueryParams.AddIgnoredActor(Hit1.GetActor());
 					QueryParams.AddIgnoredActor(Hit2.GetActor());
@@ -171,8 +176,8 @@ void APlayerPawn::CheckMoveTool()
 						QueryParams.AddIgnoredActor(Hit4.GetActor());
 						QueryParams.AddIgnoredActor(Hit5.GetActor());
 						if (!GetWorld()->LineTraceSingleByChannel(Hit6, Hit3.GetActor()->GetActorLocation(), Hit3.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
-							&& !GetWorld()->LineTraceSingleByChannel(Hit6, Hit4.GetActor()->GetActorLocation(), Hit4.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
-							&& !GetWorld()->LineTraceSingleByChannel(Hit6, Hit5.GetActor()->GetActorLocation(), Hit5.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams))
+							&& !GetWorld()->LineTraceSingleByChannel(Hit7, Hit4.GetActor()->GetActorLocation(), Hit4.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
+							&& !GetWorld()->LineTraceSingleByChannel(Hit8, Hit5.GetActor()->GetActorLocation(), Hit5.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams))
 						{
 							LeftTool = Hit3.GetActor();
 							LeftwardState = EPawnState::Horizontal;
@@ -185,7 +190,7 @@ void APlayerPawn::CheckMoveTool()
 			else if (PawnTrend == EPawnTrend::FrontAndBack)
 			{
 				//RightTool
-				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorRightVector()*(100), ToolChannel, QueryParams))
+				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorRightVector()*(100), ToolChannel, QueryParams = ResetQueryParams(QueryParams)))
 				{
 					QueryParams.AddIgnoredActor(Hit1.GetActor());
 					if (GetWorld()->LineTraceSingleByChannel(Hit2, Hit1.GetActor()->GetActorLocation(), Hit1.GetActor()->GetActorLocation() + GetActorRightVector()*(100), ToolChannel, QueryParams))
@@ -212,7 +217,7 @@ void APlayerPawn::CheckMoveTool()
 				}
 
 				//LeftTool
-				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorRightVector()*(-100), ToolChannel, QueryParams))
+				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorRightVector()*(-100), ToolChannel, QueryParams = ResetQueryParams(QueryParams)))
 				{
 					QueryParams.AddIgnoredActor(Hit1.GetActor());
 					if (GetWorld()->LineTraceSingleByChannel(Hit2, Hit1.GetActor()->GetActorLocation(), Hit1.GetActor()->GetActorLocation() + GetActorRightVector()*(-100), ToolChannel, QueryParams))
@@ -239,8 +244,9 @@ void APlayerPawn::CheckMoveTool()
 				}
 
 				//FrontTool
-				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart + GetActorRightVector()*(100), TraceStart + GetActorRightVector()*(100) + GetActorForwardVector()*(100), ToolChannel, QueryParams)
-					&& GetWorld()->LineTraceSingleByChannel(Hit2, TraceStart + GetActorRightVector()*(-100), TraceStart + GetActorRightVector()*(-100) + GetActorForwardVector()*(100), ToolChannel, QueryParams))
+				QueryParams = ResetQueryParams(QueryParams);
+				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorRightVector()*(100), ToolChannel, QueryParams)
+					&& GetWorld()->LineTraceSingleByChannel(Hit2, TraceStart, TraceStart + GetActorRightVector()*(-100), ToolChannel, QueryParams))
 				{
 					QueryParams.AddIgnoredActor(Hit1.GetActor());
 					QueryParams.AddIgnoredActor(Hit2.GetActor());
@@ -252,8 +258,8 @@ void APlayerPawn::CheckMoveTool()
 						QueryParams.AddIgnoredActor(Hit4.GetActor());
 						QueryParams.AddIgnoredActor(Hit5.GetActor());
 						if (!GetWorld()->LineTraceSingleByChannel(Hit6, Hit3.GetActor()->GetActorLocation(), Hit3.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
-							&& !GetWorld()->LineTraceSingleByChannel(Hit6, Hit4.GetActor()->GetActorLocation(), Hit4.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
-							&& !GetWorld()->LineTraceSingleByChannel(Hit6, Hit5.GetActor()->GetActorLocation(), Hit5.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams))
+							&& !GetWorld()->LineTraceSingleByChannel(Hit7, Hit4.GetActor()->GetActorLocation(), Hit4.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
+							&& !GetWorld()->LineTraceSingleByChannel(Hit8, Hit5.GetActor()->GetActorLocation(), Hit5.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams))
 						{
 							FrontTool = Hit3.GetActor();
 							ForwardState = EPawnState::Horizontal;
@@ -263,8 +269,9 @@ void APlayerPawn::CheckMoveTool()
 					}
 				}
 				//BackTool
-				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart + GetActorRightVector()*(100), TraceStart + GetActorRightVector()*(100) + GetActorForwardVector()*(-100), ToolChannel, QueryParams)
-					&& GetWorld()->LineTraceSingleByChannel(Hit2, TraceStart + GetActorRightVector()*(-100), TraceStart + GetActorRightVector()*(-100) + GetActorForwardVector()*(-100), ToolChannel, QueryParams))
+				QueryParams = ResetQueryParams(QueryParams);
+				if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorRightVector()*(100), ToolChannel, QueryParams)
+					&& GetWorld()->LineTraceSingleByChannel(Hit2, TraceStart, TraceStart + GetActorRightVector()*(-100), ToolChannel, QueryParams))
 				{
 					QueryParams.AddIgnoredActor(Hit1.GetActor());
 					QueryParams.AddIgnoredActor(Hit2.GetActor());
@@ -276,8 +283,8 @@ void APlayerPawn::CheckMoveTool()
 						QueryParams.AddIgnoredActor(Hit4.GetActor());
 						QueryParams.AddIgnoredActor(Hit5.GetActor());
 						if (!GetWorld()->LineTraceSingleByChannel(Hit6, Hit3.GetActor()->GetActorLocation(), Hit3.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
-							&& !GetWorld()->LineTraceSingleByChannel(Hit6, Hit4.GetActor()->GetActorLocation(), Hit4.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
-							&& !GetWorld()->LineTraceSingleByChannel(Hit6, Hit5.GetActor()->GetActorLocation(), Hit5.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams))
+							&& !GetWorld()->LineTraceSingleByChannel(Hit7, Hit4.GetActor()->GetActorLocation(), Hit4.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams)
+							&& !GetWorld()->LineTraceSingleByChannel(Hit8, Hit5.GetActor()->GetActorLocation(), Hit5.GetActor()->GetActorLocation() + GetActorUpVector()*(100), ToolChannel, QueryParams))
 						{
 							BackTool = Hit3.GetActor();
 							BackwardState = EPawnState::Horizontal;
@@ -398,7 +405,6 @@ void APlayerPawn::CheckMoveTool()
 			//LeftTool
 			if (GetWorld()->LineTraceSingleByChannel(Hit1, TraceStart, TraceStart + GetActorRightVector()*TraceLength_Leftward*(-1), ToolChannel, QueryParams = ResetQueryParams(QueryParams)))
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("1")));
 				QueryParams.AddIgnoredActor(Hit1.GetActor());
 				if (GetWorld()->LineTraceSingleByChannel(Hit2, Hit1.GetActor()->GetActorLocation(), Hit1.GetActor()->GetActorLocation() + GetActorRightVector()*TraceLength_Leftward*(-1), ToolChannel, QueryParams))
 				{
@@ -407,7 +413,6 @@ void APlayerPawn::CheckMoveTool()
 						&& !GetWorld()->LineTraceSingleByChannel(Hit4, Hit2.GetActor()->GetActorLocation(), Hit2.GetActor()->GetActorLocation() + GetActorUpVector() * 100, ToolChannel, QueryParams)
 						&& !GetWorld()->LineTraceSingleByChannel(Hit5, Hit2.GetActor()->GetActorLocation() + GetActorUpVector() * 100, Hit2.GetActor()->GetActorLocation() + GetActorUpVector() * 100 + GetActorRightVector() * (-100), ToolChannel, QueryParams))
 					{
-						GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("3")));
 						LeftwardTrend = EPawnTrend::FrontAndBack;
 						LeftwardState = EPawnState::Horizontal;
 						LeftTool = Hit2.GetActor();
@@ -418,7 +423,6 @@ void APlayerPawn::CheckMoveTool()
 			}
 			if (GetWorld()->LineTraceSingleByChannel(Hit1, Basement->GetActorLocation() + (-100)*GetActorRightVector(), Basement->GetActorLocation() + (-100)*GetActorRightVector() + GetActorUpVector() * 100, ToolChannel, QueryParams = ResetQueryParams(QueryParams)))
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("4")));
 				QueryParams.AddIgnoredActor(Hit1.GetActor());
 				if (GetWorld()->LineTraceSingleByChannel(Hit2, Hit1.GetActor()->GetActorLocation(), Hit1.GetActor()->GetActorLocation() + (-100)*GetActorRightVector(), ToolChannel, QueryParams))
 				{
@@ -455,15 +459,12 @@ void APlayerPawn::CheckBase()
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
 	QueryParams.bTraceComplex = true;
-	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, FColor::Red, false, 10.0f, 0, 10.0f);
 	if (GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ToolChannel, QueryParams))
 	{
 		Basement = Hit.GetActor();
-		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("Basement Find")));
 		return;
 	}
 	Basement = nullptr;
-	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, FString::Printf(TEXT("Basement Not Find")));
 	return;
 }
 
@@ -481,36 +482,28 @@ void APlayerPawn::ResetButtonTransform()
 	if (FrontTool)
 	{
 		ForwardButton->SetVisibility(true);
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("Find Front")));
 	}
 	else {
 		ForwardButton->SetVisibility(false);
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("No Front")));
 	}
 	if (RightTool) {
 		RightwardButton->SetVisibility(true);
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("Find Right")));
 	}
 	else {
 		RightwardButton->SetVisibility(false);
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("No Right")));
 	}
 	if (BackTool) {
 		BackwardButton->SetVisibility(true);
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("Find Back")));
 	}
 	else {
 		BackwardButton->SetVisibility(false);
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("No Back")));
 	}
 
 	if (LeftTool) {
 		LeftwardButton->SetVisibility(true);
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("Find Left")));
 	}
 	else {
 		LeftwardButton->SetVisibility(false);
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("No Left")));
 	}
 }
 
@@ -526,12 +519,26 @@ void APlayerPawn::Moving(float DeltaTime)
 	MeshComp->AddWorldRotation(RotationOffset * (90 / MoveSpeed));
 }
 
+void APlayerPawn::CameraCircling(float DeltaTime)
+{
+	if (FMath::Abs(RotatePoint->GetComponentRotation().Yaw-EndCirclePointRotation.Yaw)<=2.0f) { 
+		OnCameraCircleCompleteDelegate.ExecuteIfBound();
+		return;
+	}
+	RotatePoint->AddLocalRotation(CircleOffset*CameraChangeSpeed);
+	ResetButtonTransform();
+}
+
 void APlayerPawn::OnMovingComplete()
 {
 	bMoving = false;
-	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("Move Complete")));
 	CheckMoveTool();
-	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("%f %f %f"), MeshComp->GetComponentRotation().Roll, MeshComp->GetComponentRotation().Pitch, MeshComp->GetComponentRotation().Yaw));
+}
+
+void APlayerPawn::OnCameraCircleComplete()
+{
+	bIsCameraCircling = false;
+	RotatePoint->SetWorldRotation(EndCirclePointRotation);
 }
 
 FVector APlayerPawn::MathFun1()
@@ -544,6 +551,7 @@ void APlayerPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	if (bMoving) Moving(DeltaTime);
+	if (bIsCameraCircling) CameraCircling(DeltaTime);
 }
 
 // Called to bind functionality to input
@@ -593,4 +601,20 @@ void APlayerPawn::StartMove(AActor * Tool)
 	LeftwardButton->SetVisibility(false);
 
 }
+
+void APlayerPawn::StartCircleCamera(bool bIsNext)
+{
+	if (bIsNext) CircleOffset = FRotator(0, -1, 0);
+	else CircleOffset = FRotator(0, 1, 0);
+	StartCirclePointRotation = RotatePoint->GetComponentRotation();
+	EndCirclePointRotation = RotatePoint->GetComponentRotation() + CircleOffset * 90;
+	if (FMath::Abs((int32)EndCirclePointRotation.Yaw) / 180)
+	{
+		if (EndCirclePointRotation.Yaw > 180) EndCirclePointRotation.Yaw = EndCirclePointRotation.Yaw - 360.0f;
+		if (EndCirclePointRotation.Yaw < -180)EndCirclePointRotation.Yaw = EndCirclePointRotation.Yaw + 360.0f;
+	}
+	bIsCameraCircling = true;
+}
+
+
 
